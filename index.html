@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Diario de Estudio</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <header class="header">
+        <h1>Diario de Estudio</h1>
+    </header>
+
+    <main class="container">
+        <section class="streaks-section" aria-labelledby="streaks-title">
+            <h2 id="streaks-title" class="section-title">Rachas</h2>
+            <div class="streaks-grid">
+                <article class="streak-card current-streak" aria-labelledby="current-streak-title">
+                    <h3 id="current-streak-title" class="streak-card-title">Racha actual</h3>
+                    <div class="streak-card-display" id="streakDisplay" aria-live="polite">0</div>
+                    <p class="streak-card-label">días consecutivos</p>
+                </article>
+                <article class="streak-card best-streak" aria-labelledby="best-streak-title">
+                    <h3 id="best-streak-title" class="streak-card-title">Mejor racha histórica</h3>
+                    <div class="streak-card-display" id="bestStreakDisplay" aria-live="polite">0</div>
+                    <p class="streak-card-label">días consecutivos</p>
+                </article>
+            </div>
+        </section>
+
+        <section class="form-section" aria-labelledby="form-title">
+            <h2 id="form-title" class="section-title">Registrar sesión de estudio</h2>
+            <form id="studyForm" novalidate>
+                <div class="form-group">
+                    <label for="fecha">Fecha</label>
+                    <input type="date" id="fecha" name="fecha" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="materia">Materia</label>
+                    <input type="text" id="materia" name="materia" required maxlength="100" placeholder="Ej. Matemáticas">
+                </div>
+
+                <div class="form-group">
+                    <label for="tema">Tema</label>
+                    <input type="text" id="tema" name="tema" required maxlength="150" placeholder="Ej. Álgebra lineal">
+                </div>
+
+                <div class="form-group">
+                    <label for="minutos">Minutos</label>
+                    <input type="number" id="minutos" name="minutos" min="1" max="600" required placeholder="Ej. 45">
+                </div>
+
+                <button type="submit" class="submit-btn">Guardar sesión</button>
+            </form>
+            <p id="formMessage" class="form-message" aria-live="polite"></p>
+        </section>
+
+        <section class="history-section" aria-labelledby="history-title">
+            <h2 id="history-title" class="section-title">Historial de sesiones</h2>
+            <div id="historyEmpty" class="empty-state">No hay sesiones registradas aún.</div>
+            <ul id="historyList" class="history-list" aria-label="Lista de sesiones de estudio"></ul>
+        </section>
+    </main>
+
+    <footer class="footer">
+        <p>Diario de Estudio - Datos guardados localmente</p>
+    </footer>
+
+    <script src="app.js"></script>
+</body>
+</html>
