@@ -11,6 +11,8 @@ const historyList = document.getElementById('historyList');
 const historyEmpty = document.getElementById('historyEmpty');
 const streakDisplay = document.getElementById('streakDisplay');
 const bestStreakDisplay = document.getElementById('bestStreakDisplay');
+const weeklyMinutesDisplay = document.getElementById('weeklyMinutesDisplay');
+const weeklyMinutesDetail = document.getElementById('weeklyMinutesDetail');
 
 // Inicializar fecha con fecha actual
 function initializeDate() {
@@ -288,6 +290,47 @@ function calculateBestStreak() {
     }
 }
 
+// Formatear detalle de minutos (horas cuando supera 60 min)
+function formatMinutesDetail(totalMinutes) {
+    if (totalMinutes < 60) {
+        return 'minutos estudiados';
+    }
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    return minutes === 0 ? `${hours} h` : `${hours} h ${minutes} min`;
+}
+
+// Calcular total de minutos estudiados en la semana actual (lunes a domingo)
+function calculateWeeklyMinutes() {
+    const sessions = getSessions();
+
+    const today = new Date();
+    const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+
+    // La semana empieza el lunes (0 = domingo, 1 = lunes, ...)
+    const daysSinceMonday = (todayDate.getDay() + 6) % 7;
+    const startOfWeek = new Date(todayDate);
+    startOfWeek.setDate(todayDate.getDate() - daysSinceMonday);
+    const endOfWeek = new Date(startOfWeek);
+    endOfWeek.setDate(startOfWeek.getDate() + 7);
+
+    const total = sessions.reduce((sum, session) => {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(session.fecha)) return sum;
+        const [y, m, d] = session.fecha.split('-').map(Number);
+        const sessionDate = new Date(y, m - 1, d);
+        if (sessionDate < startOfWeek || sessionDate >= endOfWeek) return sum;
+        const minutes = Number(session.minutos);
+        return Number.isFinite(minutes) ? sum + minutes : sum;
+    }, 0);
+
+    if (weeklyMinutesDisplay) {
+        weeklyMinutesDisplay.textContent = total.toString();
+    }
+    if (weeklyMinutesDetail) {
+        weeklyMinutesDetail.textContent = formatMinutesDetail(total);
+    }
+}
+
 // Manejar envío del formulario
 studyForm.addEventListener('submit', (e) => {
     e.preventDefault();
@@ -366,6 +409,7 @@ studyForm.addEventListener('submit', (e) => {
     renderHistory();
     calculateStreak();
     calculateBestStreak();
+    calculateWeeklyMinutes();
 });
 
 // Inicializar la aplicación
@@ -374,6 +418,7 @@ function init() {
     renderHistory();
     calculateStreak();
     calculateBestStreak();
+    calculateWeeklyMinutes();
 }
 
 // Ejecutar al cargar el DOM
