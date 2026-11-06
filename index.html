@@ -33,6 +33,24 @@
             </div>
         </section>
 
+        <section class="heatmap-section" aria-labelledby="heatmap-title">
+            <h2 id="heatmap-title" class="section-title">Mapa de actividad</h2>
+            <div class="heatmap-body">
+                <div class="heatmap-weekdays" aria-hidden="true">
+                    <span>L</span>
+                    <span>M</span>
+                    <span>X</span>
+                    <span>J</span>
+                    <span>V</span>
+                    <span>S</span>
+                    <span>D</span>
+                </div>
+                <div id="heatmapGrid" class="heatmap-grid" role="group" aria-label="Días estudiados en las últimas 12 semanas"></div>
+            </div>
+            <div id="heatmapLegend" class="heatmap-legend" role="list" aria-label="Leyenda del mapa de actividad"></div>
+            <p id="heatmapDetail" class="heatmap-detail" aria-live="polite" aria-atomic="true">Seleccioná un día para ver el detalle.</p>
+        </section>
+
         <section class="form-section" aria-labelledby="form-title">
             <h2 id="form-title" class="section-title">Registrar sesión de estudio</h2>
             <form id="studyForm" novalidate>
@@ -72,6 +90,7 @@
         <p>Diario de Estudio - Datos guardados localmente</p>
     </footer>
 
+    <script src="heatmap.js"></script>
     <script src="app.js"></script>
 </body>
 </html>

@@ -13,6 +13,16 @@ const streakDisplay = document.getElementById('streakDisplay');
 const bestStreakDisplay = document.getElementById('bestStreakDisplay');
 const weeklyMinutesDisplay = document.getElementById('weeklyMinutesDisplay');
 const weeklyMinutesDetail = document.getElementById('weeklyMinutesDetail');
+const heatmapGrid = document.getElementById('heatmapGrid');
+const heatmapLegend = document.getElementById('heatmapLegend');
+const heatmapDetail = document.getElementById('heatmapDetail');
+const heatmapSection = document.querySelector('.heatmap-section');
+
+const HEATMAP_DEFAULT_DETAIL = 'Seleccioná un día para ver el detalle.';
+let heatmapDaysByKey = new Map();
+let pinnedHeatmapDateKey = null;
+let storageReadFailed = false;
+let storageWarningShown = false;
 
 // Inicializar fecha con fecha actual
 function initializeDate() {
@@ -24,15 +34,39 @@ function initializeDate() {
     fechaInput.value = `${year}-${month}-${day}`;
 }
 
+function warnStorageRead(error) {
+    if (storageWarningShown) {
+        return;
+    }
+
+    storageWarningShown = true;
+    console.warn(
+        'No se pudieron leer las sesiones guardadas. Se muestra el mapa vacío y no se modifican los datos existentes.',
+        error
+    );
+}
+
 // Obtener sesiones desde localStorage
 function getSessions() {
     try {
         const data = localStorage.getItem(STORAGE_KEY);
-        if (!data) return [];
+        if (!data) {
+            storageReadFailed = false;
+            return [];
+        }
+
         const sessions = JSON.parse(data);
-        return Array.isArray(sessions) ? sessions : [];
+        if (!Array.isArray(sessions)) {
+            storageReadFailed = true;
+            warnStorageRead(new Error('El almacenamiento no contiene una lista de sesiones.'));
+            return [];
+        }
+
+        storageReadFailed = false;
+        return sessions;
     } catch (error) {
-        console.error('Error al leer sesiones:', error);
+        storageReadFailed = true;
+        warnStorageRead(error);
         return [];
     }
 }
@@ -113,6 +147,276 @@ function renderHistory() {
         historyList.appendChild(li);
     });
 }
+
+function renderHeatmapLegend() {
+    if (!heatmapLegend || typeof Heatmap === 'undefined') {
+        return;
+    }
+
+    heatmapLegend.innerHTML = '';
+
+    Heatmap.LEVELS.forEach(item => {
+        const legendItem = document.createElement('span');
+        legendItem.className = 'heatmap-legend-item';
+        legendItem.setAttribute('role', 'listitem');
+
+        const swatch = document.createElement('span');
+        swatch.className = `heatmap-legend-swatch level-${item.level}`;
+        swatch.setAttribute('aria-hidden', 'true');
+
+        const label = document.createElement('span');
+        label.textContent = item.label;
+
+        legendItem.appendChild(swatch);
+        legendItem.appendChild(label);
+        heatmapLegend.appendChild(legendItem);
+    });
+
+    const futureItem = document.createElement('span');
+    futureItem.className = 'heatmap-legend-item';
+    futureItem.setAttribute('role', 'listitem');
+
+    const futureSwatch = document.createElement('span');
+    futureSwatch.className = 'heatmap-legend-swatch is-future';
+    futureSwatch.setAttribute('aria-hidden', 'true');
+
+    const futureLabel = document.createElement('span');
+    futureLabel.textContent = 'Futuro';
+
+    futureItem.appendChild(futureSwatch);
+    futureItem.appendChild(futureLabel);
+    heatmapLegend.appendChild(futureItem);
+}
+
+function renderHeatmap() {
+    if (!heatmapGrid || typeof Heatmap === 'undefined') {
+        return;
+    }
+
+    const sessions = getSessions();
+    const days = Heatmap.buildHeatmapDays(sessions, new Date());
+
+    heatmapDaysByKey = new Map(days.map(day => [day.dateKey, day]));
+    pinnedHeatmapDateKey = null;
+    heatmapGrid.innerHTML = '';
+
+    days.forEach(day => {
+        const cell = document.createElement(day.isFuture ? 'span' : 'button');
+        const stateClasses = [`level-${day.level}`];
+
+        if (day.isFuture) {
+            stateClasses.push('is-future');
+        }
+
+        if (day.isToday) {
+            stateClasses.push('is-today');
+        }
+
+        cell.className = `heatmap-cell ${stateClasses.join(' ')}`;
+        cell.dataset.dateKey = day.dateKey;
+
+        if (day.isFuture) {
+            cell.setAttribute('aria-hidden', 'true');
+        } else {
+            cell.type = 'button';
+            cell.tabIndex = -1;
+            cell.setAttribute('aria-label', Heatmap.getAccessibleLabel(day));
+        }
+
+        heatmapGrid.appendChild(cell);
+    });
+
+    const firstCell = heatmapGrid.querySelector('button.heatmap-cell');
+    if (firstCell) {
+        firstCell.tabIndex = 0;
+    }
+
+    renderHeatmapLegend();
+
+    if (heatmapDetail) {
+        heatmapDetail.textContent = HEATMAP_DEFAULT_DETAIL;
+    }
+}
+
+function getHeatmapCell(target) {
+    if (!(target instanceof Element)) {
+        return null;
+    }
+
+    return target.closest('.heatmap-cell');
+}
+
+function getHeatmapDayFromCell(cell) {
+    if (!cell || !cell.dataset.dateKey) {
+        return null;
+    }
+
+    return heatmapDaysByKey.get(cell.dataset.dateKey) || null;
+}
+
+function showHeatmapDetail(day) {
+    if (!heatmapDetail || !day || day.isFuture) {
+        return;
+    }
+
+    heatmapDetail.textContent = Heatmap.formatDetail(day);
+}
+
+function setHeatmapDefaultDetail() {
+    if (heatmapDetail) {
+        heatmapDetail.textContent = HEATMAP_DEFAULT_DETAIL;
+    }
+}
+
+function resetHeatmapSelection() {
+    pinnedHeatmapDateKey = null;
+    setHeatmapDefaultDetail();
+}
+
+function restoreHeatmapDetail() {
+    if (!pinnedHeatmapDateKey) {
+        setHeatmapDefaultDetail();
+        return;
+    }
+
+    const day = heatmapDaysByKey.get(pinnedHeatmapDateKey);
+    if (day) {
+        showHeatmapDetail(day);
+    } else {
+        resetHeatmapSelection();
+    }
+}
+
+function focusHeatmapCell(cells, index) {
+    const target = cells[index];
+    if (!target) {
+        return;
+    }
+
+    target.tabIndex = 0;
+    target.focus();
+}
+
+if (heatmapGrid) {
+    heatmapGrid.addEventListener('pointerover', event => {
+        const cell = getHeatmapCell(event.target);
+        const day = getHeatmapDayFromCell(cell);
+
+        if (day) {
+            showHeatmapDetail(day);
+        }
+    });
+
+    heatmapGrid.addEventListener('pointerout', event => {
+        const cell = getHeatmapCell(event.target);
+        if (!cell || cell.contains(event.relatedTarget)) {
+            return;
+        }
+
+        restoreHeatmapDetail();
+    });
+
+    heatmapGrid.addEventListener('focusin', event => {
+        const cell = getHeatmapCell(event.target);
+        if (!cell || cell.tagName !== 'BUTTON') {
+            return;
+        }
+
+        const cells = Array.from(heatmapGrid.querySelectorAll('button.heatmap-cell'));
+        cells.forEach(item => {
+            item.tabIndex = -1;
+        });
+        cell.tabIndex = 0;
+
+        const day = getHeatmapDayFromCell(cell);
+        if (day) {
+            showHeatmapDetail(day);
+        }
+    });
+
+    heatmapGrid.addEventListener('focusout', event => {
+        if (heatmapGrid.contains(event.relatedTarget)) {
+            return;
+        }
+
+        restoreHeatmapDetail();
+    });
+
+    heatmapGrid.addEventListener('click', event => {
+        const cell = getHeatmapCell(event.target);
+        if (!cell || cell.tagName !== 'BUTTON') {
+            return;
+        }
+
+        const day = getHeatmapDayFromCell(cell);
+        if (!day) {
+            return;
+        }
+
+        pinnedHeatmapDateKey = day.dateKey;
+        showHeatmapDetail(day);
+    });
+
+    heatmapGrid.addEventListener('keydown', event => {
+        const cell = getHeatmapCell(event.target);
+        if (!cell || cell.tagName !== 'BUTTON') {
+            return;
+        }
+
+        const cells = Array.from(heatmapGrid.querySelectorAll('button.heatmap-cell'));
+        const currentIndex = cells.indexOf(cell);
+        if (currentIndex === -1) {
+            return;
+        }
+
+        let targetIndex = currentIndex;
+
+        switch (event.key) {
+            case 'ArrowRight':
+                targetIndex = currentIndex + 7;
+                break;
+            case 'ArrowLeft':
+                targetIndex = currentIndex - 7;
+                break;
+            case 'ArrowDown':
+                targetIndex = currentIndex + 1;
+                break;
+            case 'ArrowUp':
+                targetIndex = currentIndex - 1;
+                break;
+            case 'Home':
+                targetIndex = 0;
+                break;
+            case 'End':
+                targetIndex = cells.length - 1;
+                break;
+            default:
+                return;
+        }
+
+        event.preventDefault();
+
+        if (targetIndex >= 0 && targetIndex < cells.length) {
+            focusHeatmapCell(cells, targetIndex);
+        }
+    });
+}
+
+document.addEventListener('click', event => {
+    if (!pinnedHeatmapDateKey || !heatmapSection) {
+        return;
+    }
+
+    if (!heatmapSection.contains(event.target)) {
+        resetHeatmapSelection();
+    }
+});
+
+document.addEventListener('keydown', event => {
+    if (event.key === 'Escape') {
+        resetHeatmapSelection();
+    }
+});
 
 // Escapar HTML para evitar XSS
 function escapeHtml(text) {
@@ -391,8 +695,13 @@ studyForm.addEventListener('submit', (e) => {
         createdAt: new Date().toISOString()
     };
     
-    // Guardar
+    // Guardar sin sobrescribir datos que no se pudieron leer
     const sessions = getSessions();
+    if (storageReadFailed) {
+        showFormMessage('No se pudieron leer los datos guardados. No se guardó la sesión para no sobrescribirlos.', 'error');
+        return;
+    }
+
     sessions.push(session);
     saveSessions(sessions);
     
@@ -410,6 +719,7 @@ studyForm.addEventListener('submit', (e) => {
     calculateStreak();
     calculateBestStreak();
     calculateWeeklyMinutes();
+    renderHeatmap();
 });
 
 // Inicializar la aplicación
@@ -419,6 +729,7 @@ function init() {
     calculateStreak();
     calculateBestStreak();
     calculateWeeklyMinutes();
+    renderHeatmap();
 }
 
 // Ejecutar al cargar el DOM
