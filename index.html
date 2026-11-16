@@ -33,6 +33,45 @@
             </div>
         </section>
 
+        <section class="goal-section" id="goalSection" aria-labelledby="goal-title">
+            <h2 id="goal-title" class="section-title">Objetivo semanal</h2>
+
+            <div class="goal-status">
+                <p class="goal-status-title" id="goalStatusTitle">Aún no tienes objetivo semanal</p>
+                <p class="goal-hint" id="goalHint">Fija cuántos minutos quieres estudiar esta semana.</p>
+            </div>
+
+            <div class="goal-progress" id="goalProgress" hidden>
+                <p class="goal-counter" id="goalCounter"></p>
+                <div class="goal-progress-track" id="goalProgressBar"
+                     role="progressbar"
+                     aria-label="Progreso del objetivo semanal"
+                     aria-valuemin="0" aria-valuemax="0" aria-valuenow="0" aria-valuetext="">
+                    <span class="goal-progress-fill" id="goalProgressFill" aria-hidden="true"></span>
+                </div>
+                <p class="goal-remaining" id="goalRemaining"></p>
+                <p class="goal-excess" id="goalExcess" hidden></p>
+            </div>
+
+            <form class="goal-form" id="goalForm" novalidate>
+                <div class="form-group">
+                    <label for="goalMinutes">Objetivo en minutos</label>
+                    <input type="text" id="goalMinutes" name="goalMinutes" inputmode="numeric"
+                           autocomplete="off" aria-describedby="goalMessage" placeholder="Ej. 300">
+                </div>
+                <button type="submit" class="submit-btn">Guardar objetivo</button>
+            </form>
+
+            <div class="goal-shortcuts" role="group" aria-label="Atajos de objetivo">
+                <button type="button" class="goal-shortcut" data-goal-minutes="120">120 min</button>
+                <button type="button" class="goal-shortcut" data-goal-minutes="300">300 min</button>
+                <button type="button" class="goal-shortcut" data-goal-minutes="600">600 min</button>
+            </div>
+
+            <p class="goal-message" id="goalMessage" role="status"
+               aria-live="polite" aria-atomic="true"></p>
+        </section>
+
         <section class="heatmap-section" aria-labelledby="heatmap-title">
             <h2 id="heatmap-title" class="section-title">Mapa de actividad</h2>
             <div class="heatmap-body">
@@ -91,6 +130,7 @@
     </footer>
 
     <script src="heatmap.js"></script>
+    <script src="weekly-goal.js"></script>
     <script src="app.js"></script>
 </body>
 </html>

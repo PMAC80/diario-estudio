@@ -1,4 +1,10 @@
 const STORAGE_KEY = 'diario-estudio-v1';
+const HISTORY_DATE_FORMATTER = new Intl.DateTimeFormat('es-ES', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric'
+});
 
 // Elementos del DOM
 const studyForm = document.getElementById('studyForm');
@@ -17,12 +23,27 @@ const heatmapGrid = document.getElementById('heatmapGrid');
 const heatmapLegend = document.getElementById('heatmapLegend');
 const heatmapDetail = document.getElementById('heatmapDetail');
 const heatmapSection = document.querySelector('.heatmap-section');
+const goalForm = document.getElementById('goalForm');
+const goalInput = document.getElementById('goalMinutes');
+const goalStatusTitle = document.getElementById('goalStatusTitle');
+const goalHint = document.getElementById('goalHint');
+const goalProgress = document.getElementById('goalProgress');
+const goalCounter = document.getElementById('goalCounter');
+const goalProgressBar = document.getElementById('goalProgressBar');
+const goalProgressFill = document.getElementById('goalProgressFill');
+const goalRemaining = document.getElementById('goalRemaining');
+const goalExcess = document.getElementById('goalExcess');
+const goalMessage = document.getElementById('goalMessage');
+const goalShortcuts = document.querySelector('.goal-shortcuts');
 
 const HEATMAP_DEFAULT_DETAIL = 'Seleccioná un día para ver el detalle.';
 let heatmapDaysByKey = new Map();
 let pinnedHeatmapDateKey = null;
 let storageReadFailed = false;
 let storageWarningShown = false;
+let currentGoal = null;
+let goalWarningShown = false;
+let lastGoalSignature = '';
 
 // Inicializar fecha con fecha actual
 function initializeDate() {
@@ -75,9 +96,11 @@ function getSessions() {
 function saveSessions(sessions) {
     try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions));
+        return true;
     } catch (error) {
         console.error('Error al guardar sesiones:', error);
         showFormMessage('Error al guardar la sesión', 'error');
+        return false;
     }
 }
 
@@ -102,12 +125,7 @@ function formatDateForDisplay(dateString) {
     // Parsear la fecha como local (YYYY-MM-DD)
     const [year, month, day] = dateString.split('-').map(Number);
     const date = new Date(year, month - 1, day);
-    return date.toLocaleDateString('es-ES', {
-        weekday: 'long',
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric'
-    });
+    return HISTORY_DATE_FORMATTER.format(date);
 }
 
 // Renderizar historial
@@ -128,24 +146,33 @@ function renderHistory() {
     
     historyEmpty.classList.add('hidden');
     historyList.innerHTML = '';
-    
+
+    // Formatear una vez por fecha y construir el HTML completo antes de
+    // asignarlo para no crear y adjuntar nodo por nodo con miles de sesiones.
+    const formattedDates = new Map();
+    const itemsHtml = [];
+
     sortedSessions.forEach(session => {
-        const li = document.createElement('li');
-        li.className = 'history-item';
-        
-        li.innerHTML = `
+        let formattedDate = formattedDates.get(session.fecha);
+
+        if (formattedDate === undefined) {
+            formattedDate = formatDateForDisplay(session.fecha);
+            formattedDates.set(session.fecha, formattedDate);
+        }
+
+        itemsHtml.push(`<li class="history-item">
             <div class="history-item-header">
-                <span class="history-item-date">${formatDateForDisplay(session.fecha)}</span>
+                <span class="history-item-date">${formattedDate}</span>
                 <span class="history-item-minutes">${session.minutos} min</span>
             </div>
             <div class="history-item-body">
                 <div class="history-item-materia">${escapeHtml(session.materia)}</div>
                 <div class="history-item-tema">${escapeHtml(session.tema)}</div>
             </div>
-        `;
-        
-        historyList.appendChild(li);
+        </li>`);
     });
+
+    historyList.innerHTML = itemsHtml.join('');
 }
 
 function renderHeatmapLegend() {
@@ -635,6 +662,289 @@ function calculateWeeklyMinutes() {
     }
 }
 
+// Obtener localStorage para el objetivo capturando el acceso
+function getGoalStorage() {
+    try {
+        return window.localStorage;
+    } catch (error) {
+        return null;
+    }
+}
+
+function warnGoalReadOnce(error) {
+    if (goalWarningShown) {
+        return;
+    }
+
+    goalWarningShown = true;
+    console.warn(
+        'No se pudo leer el objetivo semanal guardado. Se mantiene sin objetivo y no se sobrescriben los datos existentes.',
+        error
+    );
+}
+
+// Escribir el campo del objetivo (único punto de escritura)
+function setGoalField(value) {
+    if (!goalInput) {
+        return;
+    }
+
+    goalInput.value = value;
+    goalInput.setAttribute('aria-invalid', 'false');
+}
+
+function showGoalMessage(text, type) {
+    if (!goalMessage) {
+        return;
+    }
+
+    if (goalMessage.textContent === text) {
+        return;
+    }
+
+    goalMessage.textContent = text;
+    goalMessage.className = 'goal-message';
+    if (type === 'success') {
+        goalMessage.classList.add('success');
+    } else if (type === 'error') {
+        goalMessage.classList.add('error');
+    }
+}
+
+// Actualizar la tarjeta del objetivo sin leer storage ni tocar el campo
+function renderGoal(view) {
+    if (
+        typeof WeeklyGoal === 'undefined' ||
+        !goalStatusTitle ||
+        !goalHint ||
+        !goalProgress ||
+        !goalCounter ||
+        !goalProgressBar ||
+        !goalProgressFill ||
+        !goalRemaining ||
+        !goalExcess
+    ) {
+        return;
+    }
+
+    const hasGoal = Boolean(view) && view.state !== 'no-goal';
+
+    if (!hasGoal) {
+        goalStatusTitle.textContent = WeeklyGoal.NO_GOAL_TEXTS.title;
+        goalStatusTitle.hidden = false;
+        goalHint.textContent = WeeklyGoal.NO_GOAL_TEXTS.hint;
+        goalHint.hidden = false;
+        goalCounter.textContent = '';
+        goalRemaining.textContent = '';
+        goalExcess.textContent = '';
+        goalExcess.hidden = true;
+        goalProgressBar.setAttribute('aria-valuemin', '0');
+        goalProgressBar.setAttribute('aria-valuemax', '0');
+        goalProgressBar.setAttribute('aria-valuenow', '0');
+        goalProgressBar.setAttribute('aria-valuetext', '');
+        goalProgressFill.style.width = '0%';
+        goalProgress.hidden = true;
+        return;
+    }
+
+    goalStatusTitle.textContent = view.statusTitle;
+    goalStatusTitle.hidden = view.statusTitle === '';
+    goalHint.textContent = '';
+    goalHint.hidden = true;
+    goalCounter.textContent = view.counterText;
+    goalRemaining.textContent = view.remainingText;
+    goalExcess.textContent = view.excessText;
+    goalExcess.hidden = view.excess === 0;
+
+    // Fijar los atributos antes de quitar hidden
+    goalProgressBar.setAttribute('aria-valuemin', String(view.progress.valueMin));
+    goalProgressBar.setAttribute('aria-valuemax', String(view.progress.valueMax));
+    goalProgressBar.setAttribute('aria-valuenow', String(view.progress.valueNow));
+    goalProgressBar.setAttribute('aria-valuetext', view.progress.valueText);
+    goalProgressFill.style.width = `${view.percent}%`;
+    goalProgress.hidden = false;
+}
+
+// Calcular el estado actual del objetivo usando la fecha del momento
+function getGoalState() {
+    const sessions = getSessions();
+    const progress = WeeklyGoal.calculateGoalProgress(sessions, new Date());
+    const view = WeeklyGoal.evaluateGoal({
+        goal: currentGoal,
+        minutes: progress.minutes
+    });
+
+    return {
+        view,
+        signature: `${progress.weekStartKey}:${progress.minutes}`
+    };
+}
+
+// Render forzado (guardar o quitar) que además actualiza la firma
+function renderGoalState() {
+    const state = getGoalState();
+    lastGoalSignature = state.signature;
+    renderGoal(state.view);
+    return state.view;
+}
+
+// Recalcular y renderizar solo si cambió la firma semana:minutos
+function refreshGoal({ announceProgress }) {
+    if (typeof WeeklyGoal === 'undefined') {
+        return;
+    }
+
+    const state = getGoalState();
+    if (state.signature === lastGoalSignature) {
+        return;
+    }
+
+    lastGoalSignature = state.signature;
+    renderGoal(state.view);
+
+    if (!announceProgress || currentGoal === null) {
+        return;
+    }
+
+    const announcement = WeeklyGoal.getProgressAnnouncement(state.view);
+    if (announcement) {
+        showGoalMessage(announcement, 'success');
+    }
+}
+
+// Guardar un objetivo ya validado y centralizar éxito, fallo y ciclo del campo
+function applyGoalSave(value) {
+    if (!WeeklyGoal.saveGoal(getGoalStorage(), value)) {
+        showGoalMessage(WeeklyGoal.GOAL_MESSAGES.storageError, 'error');
+        console.error('No se pudo guardar el objetivo semanal en el almacenamiento.');
+        return false;
+    }
+
+    currentGoal = value;
+    setGoalField(String(value));
+    const view = renderGoalState();
+    showGoalMessage(WeeklyGoal.getSavedAnnouncement(view), 'success');
+    return true;
+}
+
+function applyGoalRemove() {
+    if (!WeeklyGoal.removeGoal(getGoalStorage())) {
+        showGoalMessage(WeeklyGoal.GOAL_MESSAGES.storageError, 'error');
+        console.error('No se pudo quitar el objetivo semanal del almacenamiento.');
+        if (currentGoal !== null) {
+            setGoalField(String(currentGoal));
+        }
+        return false;
+    }
+
+    currentGoal = null;
+    setGoalField('');
+    renderGoalState();
+    showGoalMessage(WeeklyGoal.GOAL_MESSAGES.removed, 'success');
+    return true;
+}
+
+function handleGoalSubmit(event) {
+    event.preventDefault();
+
+    if (typeof WeeklyGoal === 'undefined' || !goalInput) {
+        return;
+    }
+
+    const parsed = WeeklyGoal.parseGoalInput(goalInput.value);
+
+    if (parsed.action === 'remove') {
+        if (currentGoal === null) {
+            // Quitado idempotente sin objetivo vigente: no escribe ni anuncia
+            setGoalField('');
+            return;
+        }
+
+        applyGoalRemove();
+        return;
+    }
+
+    if (parsed.action === 'invalid') {
+        goalInput.setAttribute('aria-invalid', 'true');
+        showGoalMessage(parsed.message, 'error');
+        goalInput.focus();
+        return;
+    }
+
+    if (parsed.action === 'save') {
+        if (parsed.value === currentGoal) {
+            // Guardado repetido: normaliza el campo sin escribir ni anunciar
+            setGoalField(String(parsed.value));
+            return;
+        }
+
+        applyGoalSave(parsed.value);
+    }
+}
+
+function handleGoalShortcut(event) {
+    if (typeof WeeklyGoal === 'undefined' || !goalInput) {
+        return;
+    }
+
+    const target = event.target instanceof Element
+        ? event.target.closest('.goal-shortcut')
+        : null;
+
+    if (!target) {
+        return;
+    }
+
+    const value = Number(target.dataset.goalMinutes);
+    if (!WeeklyGoal.isValidGoal(value)) {
+        return;
+    }
+
+    setGoalField(String(value));
+
+    if (value === currentGoal) {
+        return;
+    }
+
+    applyGoalSave(value);
+}
+
+// Cargar el objetivo una sola vez al iniciar
+function initGoal() {
+    if (typeof WeeklyGoal === 'undefined' || !goalInput) {
+        return;
+    }
+
+    const result = WeeklyGoal.readGoal(getGoalStorage());
+
+    if (result.status === 'invalid' || result.status === 'unreadable') {
+        warnGoalReadOnce(new Error(`Estado del objetivo leído: ${result.status}.`));
+    }
+
+    currentGoal = result.status === 'valid' ? result.goal : null;
+    setGoalField(currentGoal === null ? '' : String(currentGoal));
+    refreshGoal({ announceProgress: false });
+}
+
+if (goalForm) {
+    goalForm.addEventListener('submit', handleGoalSubmit);
+}
+
+if (goalShortcuts) {
+    goalShortcuts.addEventListener('click', handleGoalShortcut);
+}
+
+// Recalcular el objetivo al volver a la pestaña o recibir foco, sin anunciar
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+        refreshGoal({ announceProgress: false });
+    }
+});
+
+window.addEventListener('focus', () => {
+    refreshGoal({ announceProgress: false });
+});
+
 // Manejar envío del formulario
 studyForm.addEventListener('submit', (e) => {
     e.preventDefault();
@@ -703,8 +1013,11 @@ studyForm.addEventListener('submit', (e) => {
     }
 
     sessions.push(session);
-    saveSessions(sessions);
-    
+    const saved = saveSessions(sessions);
+    if (!saved) {
+        return;
+    }
+
     // Mostrar mensaje de éxito
     showFormMessage('Sesión guardada correctamente', 'success');
     
@@ -720,11 +1033,13 @@ studyForm.addEventListener('submit', (e) => {
     calculateBestStreak();
     calculateWeeklyMinutes();
     renderHeatmap();
+    refreshGoal({ announceProgress: true });
 });
 
 // Inicializar la aplicación
 function init() {
     initializeDate();
+    initGoal();
     renderHistory();
     calculateStreak();
     calculateBestStreak();
